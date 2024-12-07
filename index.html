@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collaborative Whiteboard</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: #f4f4f4;
+        }
+        #canvas {
+            border: 1px solid #000;
+            background: #fff;
+            touch-action: none; /* Prevents touch scrolling */
+        }
+        #controls {
+            margin-bottom: 10px;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <button id="createBoard">Create Board</button>
+        <input type="text" id="joinCode" placeholder="Enter Board Code">
+        <button id="joinBoard">Join Board</button>
+    </div>
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const socket = io();
+
+        let drawing = false;
+        let lastX = 0, lastY = 0;
+        let boardCode = null;
+
+        // Draw a line on the canvas
+        function drawLine(x1, y1, x2, y2, color = 'black') {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        // Start drawing
+        function startDrawing(e) {
+            e.preventDefault();
+            drawing = true;
+            const { x, y } = getCoordinates(e);
+            lastX = x;
+            lastY = y;
+        }
+
+        // Stop drawing
+        function stopDrawing() {
+            drawing = false;
+        }
+
+        // Draw and send data to the server
+        function draw(e) {
+            if (!drawing || !boardCode) return;
+            const { x, y } = getCoordinates(e);
+
+            // Draw locally
+            drawLine(lastX, lastY, x, y);
+
+            // Send the drawing data to the server
+            socket.emit('draw', { boardCode, x1: lastX, y1: lastY, x2: x, y2: y });
+
+            lastX = x;
+            lastY = y;
+        }
+
+        // Get coordinates based on input type (mouse/touch)
+        function getCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            if (e.touches) {
+                return {
+                    x: e.touches[0].clientX - rect.left,
+                    y: e.touches[0].clientY - rect.top,
+                };
+            } else {
+                return {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                };
+            }
+        }
+
+        // Mouse and touch events
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchend', stopDrawing);
+        canvas.addEventListener('touchmove', draw);
+
+        // Receive and draw data from the server
+        socket.on('draw', ({ x1, y1, x2, y2 }) => {
+            console.log('Received draw event:', { x1, y1, x2, y2 });
+            drawLine(x1, y1, x2, y2);
+        });
+
+        // Board creation and joining
+        document.getElementById('createBoard').addEventListener('click', () => {
+            socket.emit('createBoard', {}, (code) => {
+                boardCode = code;
+                alert(`Board created! Code: ${code}`);
+            });
+        });
+
+        document.getElementById('joinBoard').addEventListener('click', () => {
+            const code = document.getElementById('joinCode').value.trim();
+            if (!code) return alert('Enter a valid code!');
+            socket.emit('joinBoard', code, (success) => {
+                if (success) {
+                    boardCode = code;
+                    alert(`Joined board: ${code}`);
+                } else {
+                    alert('Invalid code!');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
